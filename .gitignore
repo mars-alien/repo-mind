@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Backend — virtual environments
+backend/venv/
+backend/.venv/
+
+# Backend — generated / runtime files
+backend/__pycache__/
+backend/pagemind.db
+backend/weaviate_db/
+backend/qdrant_db/
+backend/*.log
+backend/=*
+
+# Backend — secrets (never commit)
+backend/.env
+
+# Docker overrides (keep docker-compose.yml itself tracked)
+docker-compose.override.yml

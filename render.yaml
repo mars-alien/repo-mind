@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: pagemind-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false          # paste from backend/.env
+      - key: JWT_SECRET
+        sync: false          # paste from backend/.env
+      - key: WEAVIATE_URL
+        sync: false          # e.g. https://abc123.weaviate.network
+      - key: WEAVIATE_API_KEY
+        sync: false          # from Weaviate Cloud dashboard
+    plan: free

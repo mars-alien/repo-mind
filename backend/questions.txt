@@ -1,0 +1,5 @@
+What is retrieval-augmented generation?
+How does hybrid search work?
+How does a vector database store and retrieve data?
+What are the limitations of RAG systems?
+Explain the transformer architecture.

@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "RAG over Active Tab",
+  "version": "1.0.0",
+  "description": "Ask questions about any webpage using AI-powered RAG.",
+  "permissions": ["activeTab", "tabs", "storage", "sidePanel", "scripting"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/extract.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/launcher.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": { "default_path": "src/sidepanel/index.html" },
+  "action": {
+    "default_title": "Open Extension",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
