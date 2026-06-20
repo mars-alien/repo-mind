@@ -3,7 +3,7 @@ import { extractAndIndex }                  from "../lib/embedder.js";
 import {
   AuthError, clearSession, getToken, getUsername,
   login, register, getSources, deleteSource, queryStream,
-  addUrlToKB, ingestPage,
+  ingestGitHub,
 } from "../lib/api.js";
 
 // ─── Status enum ───────────────────────────────────────────────────────────────
@@ -76,6 +76,23 @@ function fmtTime(ts) {
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// Returns { owner, repo, slug } when url is a GitHub repo page, otherwise null.
+function parseGitHubRepo(url) {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("github.com")) return null;
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
+    const owner = parts[0];
+    const repo  = parts[1].replace(/\.git$/, "");
+    const nonRepo = new Set(["login","settings","explore","marketplace","topics",
+                             "notifications","pulls","issues","orgs","sponsors",
+                             "features","pricing","about"]);
+    if (nonRepo.has(owner.toLowerCase())) return null;
+    return { owner, repo, slug: `${owner}/${repo}` };
+  } catch { return null; }
 }
 
 // ─── Avatars ───────────────────────────────────────────────────────────────────
@@ -221,10 +238,14 @@ function StatusPill({ status }) {
 function SourceCitations({ sources }) {
   if (!sources?.length) return null;
 
+  // Deduplicate: code chunks → unique by (filepath, start_line); others → by doc_id
   const seen   = new Set();
   const unique = sources.filter(s => {
-    if (seen.has(s.doc_id)) return false;
-    seen.add(s.doc_id);
+    const key = s.filepath && s.start_line
+      ? `${s.filepath}:${s.start_line}`
+      : s.doc_id;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 
@@ -238,30 +259,43 @@ function SourceCitations({ sources }) {
         Sources
       </p>
       <div className="space-y-1.5">
-        {unique.map((s, i) => (
-          <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-             title={s.url}
-             className="flex items-center gap-2 no-underline group">
-            <span className="w-4 h-4 rounded flex-shrink-0 text-[9px] font-bold
-                             bg-brand-50 text-brand-500 flex items-center justify-center">
-              {i + 1}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11px] font-medium text-slate-600
-                               group-hover:text-brand-600 transition-colors truncate leading-tight">
-                {s.title || hostname(s.url)}
+        {unique.map((s, i) => {
+          const isCode      = Boolean(s.filepath && s.start_line);
+          const citeLabel   = isCode
+            ? `${s.filepath}:L${s.start_line}${s.end_line && s.end_line !== s.start_line ? `-L${s.end_line}` : ""}`
+            : (s.title || hostname(s.url));
+          const subLabel    = isCode ? (s.chunk_type || "code") : hostname(s.url);
+
+          return (
+            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+               title={s.url}
+               className="flex items-center gap-2 no-underline group">
+              <span className={`w-4 h-4 rounded flex-shrink-0 text-[9px] font-bold
+                               flex items-center justify-center
+                               ${isCode
+                                 ? "bg-slate-800 text-slate-100"
+                                 : "bg-brand-50 text-brand-500"}`}>
+                {i + 1}
               </span>
-              <span className="block text-[10px] text-slate-400 truncate leading-tight">
-                {hostname(s.url)}
+              <span className="min-w-0 flex-1">
+                <span className={`block text-[11px] font-medium transition-colors truncate leading-tight
+                                  ${isCode
+                                    ? "font-mono text-slate-700 group-hover:text-brand-600"
+                                    : "text-slate-600 group-hover:text-brand-600"}`}>
+                  {citeLabel}
+                </span>
+                <span className="block text-[10px] text-slate-400 truncate leading-tight capitalize">
+                  {subLabel}
+                </span>
               </span>
-            </span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-                 className="flex-shrink-0 text-slate-300 group-hover:text-brand-500 transition-colors">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/>
-            </svg>
-          </a>
-        ))}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                   className="flex-shrink-0 text-slate-300 group-hover:text-brand-500 transition-colors">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/>
+              </svg>
+            </a>
+          );
+        })}
       </div>
     </div>
   );
@@ -360,184 +394,58 @@ function ScrollFAB({ onClick }) {
 }
 
 
-// ─── Quick-Add Bar (URL + File upload in chat) ─────────────────────────────────
+// ─── GitHub-only gate (shown on all non-GitHub pages) ─────────────────────────
 
-function QuickAddBar({ onAdded }) {
-  const [mode,   setMode]   = useState(null);      // null | "url"
-  const [url,    setUrl]    = useState("");
-  const [status, setStatus] = useState("idle");    // idle | loading | ok | err
-  const [msg,    setMsg]    = useState("");
-  const fileRef = useRef(null);
-  const urlRef  = useRef(null);
-
-  const reset = () => { setMode(null); setUrl(""); setStatus("idle"); setMsg(""); };
-
-  // ── Add URL ───────────────────────────────────────────────────────────────
-  const handleUrlAdd = async () => {
-    const trimmed = url.trim();
-    if (!trimmed) return;
-    try { new URL(trimmed); } catch {
-      setStatus("err"); setMsg("Invalid URL"); return;
-    }
-    setStatus("loading");
-    try {
-      const res = await addUrlToKB(trimmed);
-      setStatus("ok");
-      setMsg(`✓ "${res.title || trimmed}" indexed`);
-      setUrl("");
-      onAdded?.(res);
-      setTimeout(reset, 3000);
-    } catch (e) {
-      setStatus("err");
-      setMsg(e.message || "Failed to fetch URL");
-    }
-  };
-
-  // ── Upload file ───────────────────────────────────────────────────────────
-  const handleFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setMode("file");
-    setStatus("loading");
-    setMsg(`Reading ${file.name}…`);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const text = ev.target.result?.trim();
-      if (!text) { setStatus("err"); setMsg("File appears empty"); return; }
-      try {
-        const res = await ingestPage(
-          text, file.name, `file://${file.name}`, "note", "general"
-        );
-        setStatus("ok");
-        setMsg(`✓ "${file.name}" — ${res.chunks_stored} sections indexed`);
-        onAdded?.(res);
-        setTimeout(reset, 4000);
-      } catch (er) {
-        setStatus("err");
-        setMsg(er.message || "Failed to index file");
-      }
-    };
-    reader.onerror = () => { setStatus("err"); setMsg("Could not read file"); };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-
-  // Open URL input and focus it
-  const toggleUrl = () => {
-    if (mode === "url") { reset(); return; }
-    setMode("url"); setStatus("idle"); setMsg("");
-    setTimeout(() => urlRef.current?.focus(), 60);
-  };
-
-  const busy = status === "loading";
-
+function GitHubOnlyState() {
   return (
-    <div className="space-y-1.5">
-      {/* Toolbar row */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-slate-400 font-medium">Add to KB:</span>
-
-        {/* URL button */}
-        <button
-          onClick={toggleUrl}
-          disabled={busy}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px]
-                      font-medium transition-all disabled:opacity-50 ${
-            mode === "url"
-              ? "bg-brand-50 border-brand-300 text-brand-600"
-              : "bg-white border-slate-200 text-slate-500 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50"
-          }`}
-        >
-          <Icons.Globe size={11}/>
-          <span>URL</span>
-        </button>
-
-        {/* File button */}
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200
-                     text-[11px] font-medium bg-white text-slate-500
-                     hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50
-                     transition-all disabled:opacity-50"
-        >
-          <Icons.Paperclip size={11}/>
-          <span>File</span>
-        </button>
-        <input
-          ref={fileRef} type="file"
-          accept=".txt,.md,.csv,.json"
-          className="hidden"
-          onChange={handleFile}
-        />
-
-        {/* Status message */}
-        {msg && (
-          <span className={`text-[10px] animate-fade-in flex items-center gap-1 ${
-            status === "err"     ? "text-red-400"
-            : status === "ok"   ? "text-brand-600"
-            : "text-slate-400"
-          }`}>
-            {busy && <Icons.Spinner size={9}/>}
-            {msg}
-          </span>
-        )}
+    <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-5">
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
+           style={{ background: "linear-gradient(135deg,#1a1a2e,#0d1117)" }}>
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="white">
+          <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+        </svg>
       </div>
 
-      {/* Expanded URL input */}
-      {mode === "url" && (
-        <div className="flex gap-1.5 animate-fade-up">
-          <div className="flex-1 relative">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
-              <Icons.Link size={11}/>
-            </span>
-            <input
-              ref={urlRef}
-              type="url"
-              value={url}
-              onChange={e => { setUrl(e.target.value); if (status !== "idle") { setStatus("idle"); setMsg(""); } }}
-              onKeyDown={e => {
-                if (e.key === "Enter")  { e.preventDefault(); handleUrlAdd(); }
-                if (e.key === "Escape") reset();
-              }}
-              disabled={busy}
-              placeholder="https://docs.example.com/guide"
-              className="w-full pl-7 pr-2 py-2 text-xs rounded-xl border border-slate-200
-                         focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent
-                         placeholder:text-slate-300 disabled:bg-slate-50 transition-all"
-            />
-          </div>
-          <button
-            onClick={handleUrlAdd}
-            disabled={busy || !url.trim()}
-            title="Fetch and index URL"
-            className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center
-                       text-white transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100"
-            style={{ background: "#22c55e" }}
-          >
-            {busy ? <Icons.Spinner size={11}/> : <Icons.Plus size={13}/>}
-          </button>
-        </div>
-      )}
+      <div>
+        <p className="text-sm font-semibold text-slate-700">GitHub repos only</p>
+        <p className="text-xs text-slate-400 mt-1.5 leading-relaxed max-w-[220px]">
+          Navigate to any public GitHub repository and click <strong>Index this repo</strong> to get started.
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 max-w-[220px] text-left space-y-1.5">
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Example</p>
+        <p className="text-[11px] font-mono text-brand-600 break-all">github.com/owner/repo</p>
+      </div>
+
+      <p className="text-[10px] text-slate-300 max-w-[200px] leading-relaxed">
+        Answers cite exact file paths and function names
+      </p>
     </div>
   );
 }
 
-// ─── Empty state ───────────────────────────────────────────────────────────────
+// ─── GitHub Empty State ────────────────────────────────────────────────────────
 
-function EmptyState({ onIndex, isIndexing, onAdded }) {
+function GitHubEmptyState({ repo, onIndex, isIndexing, errorMsg }) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-5">
-      {/* Green circle brand mark */}
-      <div className="w-16 h-16 rounded-full flex items-center justify-center avatar-pulse"
-           style={{ background: "linear-gradient(135deg, #22c55e, #06D6A0)" }}>
-        <Icons.Search size={26} stroke={1.5}/>
+      {/* GitHub-flavoured brand mark */}
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
+           style={{ background: "linear-gradient(135deg,#1a1a2e,#0d1117)" }}>
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="white">
+          <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+        </svg>
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-700">Start your knowledge base</p>
-        <p className="text-xs text-slate-400 mt-1 leading-relaxed max-w-[220px]">
-          Index this page, add any URL, or upload a text file. Then ask anything.
+        <p className="text-sm font-semibold text-slate-700">GitHub Repository</p>
+        <p className="text-xs font-mono text-brand-600 mt-0.5 bg-brand-50 px-2 py-0.5 rounded-lg inline-block">
+          {repo.slug}
+        </p>
+        <p className="text-xs text-slate-400 mt-2.5 leading-relaxed max-w-[240px]">
+          Index this repo to ask questions about any file, function, or class.
+          Answers will cite exact file paths.
         </p>
       </div>
 
@@ -548,15 +456,18 @@ function EmptyState({ onIndex, isIndexing, onAdded }) {
                            disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: isIndexing ? "#94a3b8" : "#22c55e" }}>
           {isIndexing
-            ? <><Icons.Spinner/> Indexing…</>
-            : <><Icons.Zap size={13}/> Index this page</>
+            ? <><Icons.Spinner/> Indexing repo…</>
+            : <><Icons.Zap size={13}/> Index this repo</>
           }
         </button>
 
-        {/* Quick-add bar in empty state */}
-        <div className="w-full text-left">
-          <QuickAddBar onAdded={onAdded}/>
-        </div>
+        {errorMsg && (
+          <p className="text-[11px] text-red-500 text-center leading-relaxed">{errorMsg}</p>
+        )}
+
+        <p className="text-[10px] text-slate-300 text-center">
+          Public repos work without a token
+        </p>
       </div>
     </div>
   );
@@ -627,7 +538,7 @@ function AuthScreen({ onAuth }) {
             <input
               type="text" value={username}
               onChange={e => setUsername(e.target.value)}
-              placeholder="e.g. alex"
+              placeholder="e.g. royal"
               autoComplete="username"
               className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200
                          focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent
@@ -699,111 +610,17 @@ function ContentTypeBadge({ type }) {
       WIKI
     </span>
   );
+  if (type === "code") return (
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full
+                     bg-slate-800 text-slate-100 border border-slate-700 flex-shrink-0">
+      CODE
+    </span>
+  );
   return (
     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full
                      bg-slate-50 text-slate-400 border border-slate-100 flex-shrink-0">
       WEB
     </span>
-  );
-}
-
-// ─── URL Add form (Library panel) ──────────────────────────────────────────────
-
-const KB_IDLE     = "idle";
-const KB_FETCHING = "fetching";
-const KB_OK       = "ok";
-const KB_ERR      = "err";
-
-function AddUrlForm({ onAdded }) {
-  const [url,      setUrl]      = useState("");
-  const [kbStatus, setKbStatus] = useState(KB_IDLE);
-  const [kbMsg,    setKbMsg]    = useState("");
-  const inputRef = useRef(null);
-
-  const isValidUrl = (s) => {
-    try { new URL(s); return true; } catch { return false; }
-  };
-
-  const handleAdd = async () => {
-    const trimmed = url.trim();
-    if (!trimmed || !isValidUrl(trimmed)) {
-      setKbStatus(KB_ERR);
-      setKbMsg("Enter a valid URL starting with https://");
-      return;
-    }
-    setKbStatus(KB_FETCHING);
-    setKbMsg("Fetching & indexing…");
-    try {
-      const res = await addUrlToKB(trimmed);
-      setKbStatus(KB_OK);
-      setKbMsg(`✓ Indexed ${res.chunks_stored} sections from "${res.title || trimmed}"`);
-      setUrl("");
-      onAdded(res);
-      setTimeout(() => { setKbStatus(KB_IDLE); setKbMsg(""); }, 4000);
-    } catch (e) {
-      setKbStatus(KB_ERR);
-      setKbMsg(e.message || "Failed to fetch this URL.");
-    }
-  };
-
-  const onKey = (e) => {
-    if (e.key === "Enter")  handleAdd();
-    if (e.key === "Escape") { setUrl(""); setKbStatus(KB_IDLE); setKbMsg(""); }
-  };
-
-  const busy = kbStatus === KB_FETCHING;
-
-  return (
-    <div className="px-3 pt-3 pb-2 space-y-2 flex-shrink-0">
-      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-        Add URL to Knowledge Base
-      </p>
-
-      <div className="flex gap-2">
-        <div className="flex-1 relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
-            <Icons.Globe size={13}/>
-          </span>
-          <input
-            ref={inputRef}
-            type="url"
-            value={url}
-            onChange={e => { setUrl(e.target.value); setKbStatus(KB_IDLE); setKbMsg(""); }}
-            onKeyDown={onKey}
-            disabled={busy}
-            placeholder="https://docs.example.com/guide"
-            className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200
-                       focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent
-                       placeholder:text-slate-300 disabled:bg-slate-50 disabled:text-slate-300
-                       transition-all"
-          />
-        </div>
-        <button
-          onClick={handleAdd}
-          disabled={busy || !url.trim()}
-          title="Fetch and index this URL"
-          className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center
-                     text-white active:scale-95 transition-all
-                     disabled:cursor-not-allowed disabled:active:scale-100 disabled:opacity-50"
-          style={{ background: "#22c55e" }}
-        >
-          {busy ? <Icons.Spinner size={13}/> : <Icons.Plus size={14}/>}
-        </button>
-      </div>
-
-      {kbMsg && (
-        <p className={`text-[11px] leading-relaxed px-1 animate-fade-up ${
-          kbStatus === KB_ERR ? "text-red-500"
-          : kbStatus === KB_OK  ? "text-brand-600"
-          : "text-slate-400"
-        }`}>
-          {kbStatus === KB_FETCHING && <span className="inline-flex items-center gap-1"><Icons.Spinner size={10}/> </span>}
-          {kbMsg}
-        </p>
-      )}
-
-      <div className="border-t border-slate-100"/>
-    </div>
   );
 }
 
@@ -829,8 +646,6 @@ function LibraryPanel({ onFilterChat }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleAdded = useCallback(() => { load(); }, [load]);
-
   const handleDelete = async (docId) => {
     setDeletingId(docId);
     try {
@@ -844,14 +659,14 @@ function LibraryPanel({ onFilterChat }) {
   };
 
   const sourceIcon = (src) => {
-    if (src.source_type === "url")  return "🔗";
-    if (src.source_type === "note") return "📄";
+    if (src.source_type === "github") return "⌥";
+    if (src.source_type === "url")    return "🔗";
+    if (src.source_type === "note")   return "📄";
     return "🌐";
   };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <AddUrlForm onAdded={handleAdded}/>
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
@@ -869,10 +684,10 @@ function LibraryPanel({ onFilterChat }) {
             📚
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-700">Knowledge base is empty</p>
+            <p className="text-sm font-semibold text-slate-700">No repos indexed yet</p>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed max-w-[220px]">
-              Paste any URL above — docs, Wikipedia, articles — and it will be
-              fetched, chunked and indexed automatically.
+              Navigate to any public GitHub repository and click
+              <strong> Index this repo</strong> to get started.
             </p>
           </div>
         </div>
@@ -950,7 +765,10 @@ export default function App() {
   const [showScroll,  setShowScroll]  = useState(false);
   const [streaming,   setStreaming]   = useState(false);
 
-  const [sourceFilter, setSourceFilter] = useState(null);
+  const [sourceFilter,  setSourceFilter]  = useState(null);
+  const [currentTabUrl, setCurrentTabUrl] = useState("");
+  const [ghIndexing,    setGhIndexing]    = useState(false);
+  const [ghError,       setGhError]       = useState("");
 
   const chatRef    = useRef(null);
   const chatEndRef = useRef(null);
@@ -968,6 +786,22 @@ export default function App() {
       }
       setAuthChecked(true);
     })();
+  }, []);
+
+  // ── Track active tab URL for GitHub detection ─────────────────────────────
+
+  useEffect(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([t]) => {
+      if (t?.url) setCurrentTabUrl(t.url);
+    });
+    const handler = (msg) => {
+      if (msg.type === "PAGE_NAVIGATED" || msg.type === "TAB_SWITCHED") {
+        setCurrentTabUrl(msg.url || "");
+        setGhError("");
+      }
+    };
+    chrome.runtime.onMessage.addListener(handler);
+    return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
   // ── Scroll helpers ─────────────────────────────────────────────────────────
@@ -1001,7 +835,6 @@ export default function App() {
     setStore(null);
     setMessages([]);
     setSourceFilter(null);
-    setPageChanged(false);
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1118,17 +951,24 @@ export default function App() {
 
           function extractFlatText() {
             const clone = document.cloneNode(true);
-            ["script","style","noscript","nav","footer","aside","header",
-             "[aria-hidden='true']",".cookie-banner",".ad",".advertisement"]
+            // Only remove clearly non-content elements — avoid aside/header which
+            // many sites (e.g. Stack Overflow) place main content beside or inside
+            ["script","style","noscript","nav","footer",
+             ".cookie-banner",".ad",".advertisement",".sidebar",
+             "#sidebar","#left-sidebar","#right-sidebar"]
               .forEach(sel => {
                 try { clone.querySelectorAll(sel).forEach(el => el.remove()); } catch {}
               });
-            const walker = document.createTreeWalker(clone.body || clone, NodeFilter.SHOW_TEXT, null);
+            // Prefer a recognised main-content root before falling back to body
+            const root = clone.querySelector(
+              'main, [role="main"], article, #mainbar, #content, .question-container, .post-layout'
+            ) || clone.body || clone;
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
             const lines = [];
             let n;
             while ((n = walker.nextNode())) {
               const t = n.textContent.trim();
-              if (t.length > 30) lines.push(t);
+              if (t.length > 20) lines.push(t);
             }
             return lines.join("\n");
           }
@@ -1185,6 +1025,51 @@ export default function App() {
       setStatus(S.ERROR);
     }
   }, [scrollBottom, authed]);
+
+  // ── Index GitHub repo ──────────────────────────────────────────────────────
+
+  const handleIndexGitHub = useCallback(async () => {
+    const ghRepo = parseGitHubRepo(currentTabUrl);
+    if (!ghRepo) return;
+
+    setGhIndexing(true);
+    setGhError("");
+    setError(null);
+    setStatus(S.EMBEDDING);
+    setStore(null);
+    setMessages([]);
+    setSourceFilter(null);
+
+    try {
+      const result = await ingestGitHub(`https://github.com/${ghRepo.slug}`);
+
+      setStore(result);
+      setStatus(S.READY);
+      setPageInfo({
+        title:       `GitHub: ${ghRepo.slug}`,
+        url:         `https://github.com/${ghRepo.slug}`,
+        contentType: "code",
+      });
+      setMessages([{
+        role: "assistant",
+        text: (
+          `Ready. Indexed **${result.files_indexed} files** ` +
+          `(${result.chunks_stored} chunks) from **${ghRepo.slug}**.\n\n` +
+          `Ask me anything about this codebase — I'll cite exact file paths in answers.`
+        ),
+        ts: Date.now(),
+      }]);
+      scrollBottom(true);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } catch (err) {
+      if (err instanceof AuthError) { setAuthed(false); return; }
+      setGhError(err.message);
+      setError(err.message);
+      setStatus(S.ERROR);
+    } finally {
+      setGhIndexing(false);
+    }
+  }, [currentTabUrl, scrollBottom]);
 
   // ── Ask a question ─────────────────────────────────────────────────────────
 
@@ -1313,6 +1198,7 @@ export default function App() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAsk(); }
   };
 
+  const ghRepo       = parseGitHubRepo(currentTabUrl);
   const isIndexing   = status === S.EXTRACTING || status === S.EMBEDDING;
   const canAsk       = status !== S.ASKING && input.trim().length > 0;
   const showChat     = messages.length > 0;
@@ -1426,10 +1312,13 @@ export default function App() {
             </div>
             <p className="text-[10px] text-brand-500 truncate">{pageInfo.url}</p>
           </div>
-          <button onClick={handleIndex} disabled={isIndexing} title="Re-index this page"
-                  className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center
-                             text-brand-400 hover:text-brand-600 hover:bg-brand-100
-                             transition-all disabled:opacity-40">
+          <button
+            onClick={ghRepo ? handleIndexGitHub : handleIndex}
+            disabled={isIndexing || ghIndexing}
+            title={ghRepo ? "Re-index this repo" : "Re-index this page"}
+            className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center
+                       text-brand-400 hover:text-brand-600 hover:bg-brand-100
+                       transition-all disabled:opacity-40">
             <Icons.Refresh size={13}/>
           </button>
         </div>
@@ -1441,7 +1330,9 @@ export default function App() {
         <div className="mx-3 mt-2 px-3 py-2.5 bg-red-50 border border-red-100 rounded-xl
                         text-xs text-red-600 leading-relaxed flex items-start gap-2 animate-scale-in flex-shrink-0">
           <span className="flex-1">{error}</span>
-          <button onClick={handleIndex} className="flex-shrink-0 font-semibold underline hover:no-underline">
+          <button
+            onClick={ghRepo ? handleIndexGitHub : handleIndex}
+            className="flex-shrink-0 font-semibold underline hover:no-underline">
             Retry
           </button>
         </div>
@@ -1458,13 +1349,17 @@ export default function App() {
           {/* Chat messages */}
           <div ref={chatRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-3 relative min-w-0">
             {!showChat
-              ? (
-                <EmptyState
-                  onIndex={handleIndex}
-                  isIndexing={isIndexing}
-                  onAdded={() => {}}
-                />
-              ) : (
+              ? ghRepo
+                ? (
+                  <GitHubEmptyState
+                    repo={ghRepo}
+                    onIndex={handleIndexGitHub}
+                    isIndexing={ghIndexing}
+                    errorMsg={ghError}
+                  />
+                )
+                : <GitHubOnlyState />
+              : (
                 <>
                   {messages.map((msg, i) => (
                     <Message key={i} role={msg.role} text={msg.text} ts={msg.ts}
@@ -1500,10 +1395,6 @@ export default function App() {
           {/* Input area */}
           <div className="px-3 pb-3 pt-2 bg-white border-t border-slate-100 space-y-2 flex-shrink-0">
 
-            {/* Quick-add bar — URL and file upload */}
-            {showChat && (
-              <QuickAddBar onAdded={() => {}}/>
-            )}
 
             {/* Main input + send */}
             {showChat && (
@@ -1554,17 +1445,17 @@ export default function App() {
               </div>
             )}
 
-            {/* Re-index button */}
-            {showChat && (
-              <button onClick={handleIndex} disabled={isIndexing}
+            {/* Re-index button — only shown when on a GitHub repo page */}
+            {showChat && ghRepo && (
+              <button onClick={handleIndexGitHub} disabled={ghIndexing || isIndexing}
                       className="w-full py-2 rounded-xl border border-slate-200 text-slate-500 text-xs
                                  font-medium bg-white hover:bg-brand-50 hover:border-brand-200
                                  hover:text-brand-600 active:scale-[0.99] transition-all
                                  disabled:opacity-50 disabled:cursor-not-allowed
                                  flex items-center justify-center gap-1.5">
-                {isIndexing
-                  ? <><Icons.Spinner size={12}/> Indexing…</>
-                  : <><Icons.Refresh size={12}/> Re-index page</>
+                {ghIndexing
+                  ? <><Icons.Spinner size={12}/> Indexing repo…</>
+                  : <><Icons.Refresh size={12}/> Re-index repo</>
                 }
               </button>
             )}

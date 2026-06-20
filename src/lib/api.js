@@ -119,20 +119,18 @@ export async function ingestPage(
   return res.json();
 }
 
-// ── KB — server-side URL ingestion ───────────────────────────────────────────
+// ── GitHub repo ingestion ─────────────────────────────────────────────────────
 
 /**
- * Add any public URL to the knowledge base.
- * The backend fetches the URL, extracts content, detects type (docs/wiki/general),
- * chunks, embeds and stores it in Weaviate — no browser tab required.
- *
- * @param {string} url  Fully-qualified URL to fetch and index
- * @returns {{ doc_id, chunks_stored, status, content_type, title }}
+ * Index a GitHub repository via the backend GitHub API fetcher.
+ * @param {string}      repoUrl      e.g. "https://github.com/owner/repo"
+ * @param {string|null} githubToken  optional PAT for private repos / higher rate limits
+ * @returns {{ doc_id, chunks_stored, files_indexed, status, repo }}
  */
-export async function addUrlToKB(url) {
-  const res = await apiFetch("/kb/add", {
+export async function ingestGitHub(repoUrl, githubToken = null) {
+  const res = await apiFetch("/ingest/github", {
     method: "POST",
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ repo_url: repoUrl, github_token: githubToken || null }),
   });
   return res.json();
 }

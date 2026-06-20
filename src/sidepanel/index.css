@@ -5,18 +5,14 @@
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 
 :root {
-  --bg:             #f8fafc;
-  --surface:        #ffffff;
-  --border:         #e2e8f0;
-  --border-soft:    #f1f5f9;
-  --text:           #0f172a;
-  --text-muted:     #64748b;
-  --text-faint:     #94a3b8;
-  --accent:         #22c55e;      /* Emerald Green */
-  --accent-fresh:   #06D6A0;      /* Mint Teal */
-  --accent-curious: #F97316;      /* Warm Amber */
-  --accent-soft:    #f0fdf4;      /* brand-50 */
-  --gradient:       linear-gradient(135deg, #22c55e, #06D6A0);
+  --bg:          #f8fafc;
+  --surface:     #ffffff;
+  --border:      #e2e8f0;
+  --text:        #0f172a;
+  --text-muted:  #64748b;
+  --text-faint:  #94a3b8;
+  --accent:      #22c55e;      /* Emerald Green */
+  --accent-soft: #f0fdf4;      /* brand-50 */
 }
 
 html, body, #root {
@@ -40,28 +36,6 @@ body {
   border-radius: 99px;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
-
-/* ── Shimmer skeleton ──────────────────────────────────────────────────────── */
-
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    #f1f5f9 25%,
-    #e2e8f0 50%,
-    #f1f5f9 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite linear;
-  border-radius: 6px;
-}
-
-/* ── Glass card ────────────────────────────────────────────────────────────── */
-
-.glass {
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
 
 /* ── Chip / pill ───────────────────────────────────────────────────────────── */
 
@@ -109,23 +83,6 @@ body {
 .dot { animation: dot-bounce 1.2s infinite ease-in-out; }
 .dot:nth-child(2) { animation-delay: 0.16s; }
 .dot:nth-child(3) { animation-delay: 0.32s; }
-
-/* ── Progress bar ──────────────────────────────────────────────────────────── */
-
-@keyframes progress-stripe {
-  0%   { background-position: 0 0; }
-  100% { background-position: 40px 0; }
-}
-.progress-bar {
-  background: linear-gradient(
-    45deg,
-    rgba(255,255,255,0.15) 25%, transparent 25%,
-    transparent 50%, rgba(255,255,255,0.15) 50%,
-    rgba(255,255,255,0.15) 75%, transparent 75%
-  );
-  background-size: 40px 40px;
-  animation: progress-stripe 0.8s linear infinite;
-}
 
 /* ── Green avatar pulse (interactive feel) ─────────────────────────────────── */
 

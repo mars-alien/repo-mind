@@ -58,16 +58,11 @@ export default {
           "0%":   { opacity: "0", transform: "scale(0.95)" },
           "100%": { opacity: "1", transform: "scale(1)" },
         },
-        shimmer: {
-          "0%":   { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition:  "200% 0" },
-        },
       },
       animation: {
         "fade-up":  "fade-up 0.2s ease-out",
         "fade-in":  "fade-in 0.15s ease-out",
         "scale-in": "scale-in 0.15s ease-out",
-        shimmer:    "shimmer 1.5s infinite linear",
       },
     },
   },

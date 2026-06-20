@@ -1,5 +1,20 @@
-What is retrieval-augmented generation?
-How does hybrid search work?
-How does a vector database store and retrieve data?
-What are the limitations of RAG systems?
-Explain the transformer architecture.
+# PageMind RAG Evaluation Questions
+# One question per line. Lines starting with # are ignored.
+# 8 questions × 4 Groq calls = 32 calls — safe for Groq free tier (30 req/min).
+# Run: python evaluate_rag.py --username royal
+
+# ── mars-alien/user-api-go (Go REST API) ──────────────────────────────────────
+What is the user-api-go project and what does it do?
+What database does user-api-go use and how is data stored or retrieved?
+
+# ── mars-alien/eco-route (eco-friendly routing) ───────────────────────────────
+What is the eco-route project and what problem does it solve?
+What technologies and frameworks does eco-route use?
+
+# ── mars-alien/page-mind (RAG Chrome extension) ───────────────────────────────
+What does the PageMind extension do and how does it work at a high level?
+How does PageMind retrieve relevant content when a user asks a question?
+
+# ── mars-alien/next-js-portfolio ──────────────────────────────────────────────
+What is the next-js-portfolio project and what does it contain?
+What technologies does the next-js-portfolio project use?

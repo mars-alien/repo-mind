@@ -23,6 +23,7 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+
 # Backend — virtual environments
 backend/venv/
 backend/.venv/
@@ -40,3 +41,5 @@ backend/.env
 
 # Docker overrides (keep docker-compose.yml itself tracked)
 docker-compose.override.yml
+
+

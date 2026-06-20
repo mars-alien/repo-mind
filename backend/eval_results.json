@@ -1,0 +1,81 @@
+{
+  "summary": {
+    "faithfulness": 0.325,
+    "answer_relevancy": 0.662,
+    "context_precision": 0.312
+  },
+  "per_question": [
+    {
+      "question": "What is the user-api-go project and what does it do?",
+      "answer": "1. The user-api-go project is a Go-based backend application that provides a RESTful API for managing users, including creating new users with details such as name and date of birth.\n2. **Sources:** README.md:L1-L666",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.8,
+      "context_precision": 0.2
+    },
+    {
+      "question": "What database does user-api-go use and how is data stored or retrieved?",
+      "answer": "1. The user-api-go application uses **PostgreSQL** as its database.\n2. Sources: \nREADME.md:L1-L5\nREADME.md:L155-L158\nREADME.md:L251-L254 \nREADME.md:L296-L299 \nREADME.md:L345-L348",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.8,
+      "answer_relevancy": 0.5,
+      "context_precision": 0.8
+    },
+    {
+      "question": "What is the eco-route project and what problem does it solve?",
+      "answer": "1. The eco-route project is not explicitly described in the provided code context snippets, but based on the available information, it appears to be a project related to routing and mapping, possibly with an environmental or ecological focus.\n2. Sources: \nREADME.md:L1-L45\nfrontend/src/components/map/RoutePolyline.jsx:L1-L25\npackage.json:L1-L25 \nThe problem it solves is not clearly stated in the provided context, but it may be related to optimizing routes for environmental sustainability or providing eco-friendly transportation options.",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.4,
+      "context_precision": 0.0
+    },
+    {
+      "question": "What technologies and frameworks does eco-route use?",
+      "answer": "The provided context does not contain information about \"eco-route\". \n\nSources: \nNone",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.9
+    },
+    {
+      "question": "What does the PageMind extension do and how does it work at a high level?",
+      "answer": "1. The PageMind extension appears to be a browser extension that allows users to index and query web pages, with the goal of providing a conversational interface to access information on the web.\n2. **Sources**: \n   [src/sidepanel/App.jsx | function App]: The code suggests that the extension can extract text from web pages, index it, and then allow users to ask questions about the content.\n   [src/sidepanel/App.jsx | function App]: The extension seems to support different types of web pages, including Wikipedia articles, documentation pages, and general web pages.\n   [src/sidepanel/App.jsx | function App]: The extension uses natural language processing (NLP) to understand user queries and provide relevant answers based on the indexed content.",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.2,
+      "answer_relevancy": 0.8,
+      "context_precision": 0.0
+    },
+    {
+      "question": "How does PageMind retrieve relevant content when a user asks a question?",
+      "answer": "1. PageMind retrieves relevant content when a user asks a question by using the `queryStream` function, which takes the user's question, source IDs, and other parameters to fetch relevant information.\n2. **Sources**: filepath: [src/sidepanel/App.jsx | function App], L<start>: 245, L<end>: 263 \n3. **queryStream function**: filepath: [src/sidepanel/App.jsx | function App], L<start>: 245, L<end>: 263 \n4. **handleAsk function**: filepath: [src/sidepanel/App.jsx | function App], L<start>: 155, L<end>: 184",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.8,
+      "context_precision": 0.6
+    },
+    {
+      "question": "What is the next-js-portfolio project and what does it contain?",
+      "answer": "1. The next-js-portfolio project, also referred to as \"royal-portfolio\", is a personal portfolio website built using Next.js, React, and other modern web development technologies.\n2. **Sources**: \n[package.json]:L1-L25\n[README.md]:L1-L150 \nThe project contains various features such as an AI chatbot, interactive elements, responsive design, and performance-focused optimization. It also includes a skills section, experience section, projects section, and music section, among other components. The project is designed to showcase the developer's skills and experience in a visually engaging and interactive way.",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.8,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.0
+    },
+    {
+      "question": "What technologies does the next-js-portfolio project use?",
+      "answer": "1. The project uses Next, React, React DOM, and React Icons as listed in the package.json file.\n2. **Sources**: \npackage.json:L1-L15\nREADME.md:L1-L100 \nsrc/sidepanel/App.jsx | function App:L1-L50",
+      "contexts_count": 8,
+      "skipped": false,
+      "faithfulness": 0.8,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.0
+    }
+  ]
+}     
